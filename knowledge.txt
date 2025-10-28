@@ -1,0 +1,54 @@
+Product HooshPod App: User Guide and FAQ
+
+Overview:
+HooshPod App is a Node.js and TypeScript-based chatbot assistant that integrates Express, MongoDB, Redis, and OpenRouter for AI-powered responses. It's designed for quick knowledge retrieval from text sources.
+
+Installation Guide:
+Step 1: Download the latest release from https://github.com/example/hooshpod-app/releases.
+Step 2: Unzip the files and navigate to the project directory.
+Step 3: Run 'npm install' to install dependencies (Express, Mongoose, ioredis, axios, etc.).
+Step 4: Set environment variables: OPENROUTER_API_KEY, COHERE_API_KEY (or HUGGINGFACE_MODEL), MONGODB_URI, REDIS_URL.
+Step 5: Start the server with 'npm start' or 'ts-node src/index.ts'.
+Troubleshooting: If npm install fails, ensure Node.js 18+ is installed and clear cache with 'npm cache clean --force'.
+
+Common Errors:
+- "Connection refused to MongoDB": Check your MONGODB_URI and ensure MongoDB is running (e.g., via docker-compose).
+- "Redis timeout": Verify REDIS_URL and start Redis server.
+- "Invalid API key": Double-check OPENROUTER_API_KEY in .env file.
+
+FAQ:
+
+Q: How do I configure the OpenRouter API for the LLM?
+A: Add your API key to the .env file as OPENROUTER_API_KEY=your_key_here. The app uses the gpt-3.5-turbo model by default. For custom models, update the prompt service in src/services/llm.ts.
+
+Q: What is the purpose of Redis in this app?
+A: Redis caches repeated chat queries to improve performance and reduce API calls to OpenRouter. It uses message hashes as keys with a 1-hour TTL. Cache hits are logged and returned instantly.
+
+Q: How does chat history work in MongoDB?
+A: Each interaction is stored in a 'chats' collection with fields: userId, message, response, timestamp, sessionId. Use GET /history/:userId to retrieve history, limited to the last 50 entries for scalability.
+
+Q: Can I add more knowledge sources beyond TXT files?
+A: Currently, the app loads one TXT file on startup and chunks it for retrieval. To extend, modify src/services/retrieval.ts to support PDFs or multiple files—embeddings are generated via Cohere or Hugging Face.
+
+Q: Why use embeddings for retrieval, and how to switch providers?
+A: Embeddings enable semantic search over keyword matching for better accuracy. Use Cohere SDK for cloud-based (add COHERE_API_KEY) or @xenova/transformers for local Hugging Face models (no API key needed). Cosine similarity finds top-3 chunks.
+
+Q: How do I test the chat endpoint?
+A: Send a POST to /chat with JSON: {"message": "How do I install?", "userId": "test123"}. Expect a response with "cached": false on first try. Use tools like Postman or curl.
+
+Q: What if the LLM response is too long or overflows the context window?
+A: The app truncates combined chunks to ~4000 tokens before prompting. Monitor via logs; for production, add token counting with tiktoken.js.
+
+Q: Is Docker support included?
+A: Yes, run 'docker-compose up' to spin up the app, MongoDB, and Redis. Customize ports in docker-compose.yml if needed.
+
+Q: How to handle multi-lingual queries?
+A: Embeddings from Cohere/Hugging Face support multilingual text. Prompts can detect language implicitly, but for explicit handling, add langdetect in the chat service.
+
+Q: What's the rate limit for the /chat endpoint?
+A: Default 10 requests per minute per IP via express-rate-limit. Adjust in src/middleware/rateLimit.ts for production.
+
+Support:
+For issues, open a GitHub issue at https://github.com/example/hooshpod-app/issues. Community Discord: discord.gg/hooshpodapp.
+
+Version: 1.0.0 | Last Updated: October 18, 2025
