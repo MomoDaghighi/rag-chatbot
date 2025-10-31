@@ -1,4 +1,3 @@
-
 import { embedText } from './embedding.service';
 import { retrieveTopK } from './similarity.service';
 import { knowledgeIndex } from './knowledge.service';
@@ -6,7 +5,7 @@ import { knowledgeIndex } from './knowledge.service';
 import { ChatModel } from '../models/chat.model';
 import { callLLM } from './llm.service';
 import logger from '../utils/logger';
-import { setCache, findSimilarInCache} from './cache.service';
+import { setCache, findSimilarInCache } from './cache.service';
 
 interface ChatResult {
   response: string;
@@ -29,27 +28,27 @@ export async function processChat(
     logger.debug('Query embedding generated', { userId, sessionId });
 
     
-    const cachedResult = await findSimilarInCache(queryEmbedding);
+    const cachedResult = await findSimilarInCache(queryEmbedding, userId, sessionId);
     if (cachedResult) {
       logger.info('Cache HIT', { userId, sessionId, cached: true });
-      await saveChat(userId, sessionId, message, cachedResult.response);
+      await saveChat(userId, sessionId, message, cachedResult, true);
       const duration = Date.now() - startTime;
       return {
-        response: cachedResult.response,
+        response: cachedResult,
         cached: true,
         timestamp: new Date().toISOString(),
-        duration
+        duration,
       };
     }
 
     logger.info('Cache MISS', { userId, sessionId });
 
-    
+  
     const topChunks = retrieveTopK(queryEmbedding, 3);
     const context = topChunks.map(c => c.text).join('\n\n');
     logger.debug('Retrieved top chunks', { userId, sessionId, chunkCount: topChunks.length });
 
-  
+    
     const history = await ChatModel.find({ userId, sessionId })
       .sort({ timestamp: -1 })
       .limit(8)
@@ -80,12 +79,11 @@ Answer:`;
     const llmResponse = await callLLM(prompt);
     const response = llmResponse?.trim() || "I don't know.";
 
-   
-    await saveChat(userId, sessionId, message, response);
+    
+    await saveChat(userId, sessionId, message, response, false);
 
     
-    await setCache(`msg:${message}`, { embedding: queryEmbedding, response }, 3600);
-logger.debug('Cached response', { key: `msg:${message}` });
+    await setCache(queryEmbedding, response, userId, sessionId);
 
     const duration = Date.now() - startTime;
     logger.info('Chat processed successfully', {
@@ -93,37 +91,44 @@ logger.debug('Cached response', { key: `msg:${message}` });
       sessionId,
       cached: false,
       duration,
-      responseLength: response.length
+      responseLength: response.length,
     });
 
     return {
       response,
       cached: false,
       timestamp: new Date().toISOString(),
-      duration
+      duration,
     };
   } catch (error: any) {
     logger.error('Error in processChat', {
       userId,
       sessionId,
       error: error.message,
-      stack: error.stack
+      stack: error.stack,
     });
     throw error;
   }
 }
 
 
-async function saveChat(userId: string, sessionId: string, message: string, response: string) {
+async function saveChat(
+  userId: string,
+  sessionId: string,
+  message: string,
+  response: string,
+  cached: boolean = false
+) {
   try {
     await ChatModel.create({
       userId,
       sessionId,
       message,
       response,
-      cached: false,
-      timestamp: new Date()
+      cached,
+      timestamp: new Date(),
     });
+    logger.debug('Chat saved to DB', { userId, sessionId, cached });
   } catch (err: any) {
     logger.error('Failed to save chat to DB', { error: err.message });
   }

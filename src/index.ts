@@ -99,12 +99,17 @@ app.post('/chat', async (req, res) => {
 });
 /**
  * @swagger
- * /history/{userId}:
+ * /history:
  *   get:
- *     summary: Get chat history for a user
+ *     summary: Get chat history for a user and session
  *     parameters:
- *       - in: path
+ *       - in: query
  *         name: userId
+ *         required: true
+ *         schema:
+ *           type: string
+ *       - in: query
+ *         name: sessionId
  *         required: true
  *         schema:
  *           type: string
@@ -122,19 +127,24 @@ app.post('/chat', async (req, res) => {
  *       200:
  *         description: Paginated chat history
  */
-app.get('/history/:userId', async (req, res) => {
+app.get('/history', async (req, res) => {
   try {
-    const { userId } = req.params;
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
-    const skip = (page - 1) * limit;
+    const { userId, sessionId, page = '1', limit = '10' } = req.query;
+
+    if (!userId || !sessionId) {
+      return res.status(400).json({ error: 'userId and sessionId are required' });
+    }
+
+    const pageNum = parseInt(page as string, 10);
+    const limitNum = Math.min(parseInt(limit as string, 10), 50);
+    const skip = (pageNum - 1) * limitNum;
 
     const [total, chats] = await Promise.all([
-      ChatModel.countDocuments({ userId }),
-      ChatModel.find({ userId })
+      ChatModel.countDocuments({ userId, sessionId }),
+      ChatModel.find({ userId, sessionId })
         .sort({ timestamp: -1 })
         .skip(skip)
-        .limit(limit)
+        .limit(limitNum)
         .select('message response timestamp cached sessionId')
         .lean(),
     ]);
@@ -142,10 +152,10 @@ app.get('/history/:userId', async (req, res) => {
     res.json({
       data: chats,
       pagination: {
-        page,
-        limit,
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / limit),
+        pages: Math.ceil(total / limitNum),
       },
     });
   } catch (err: any) {

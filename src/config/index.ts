@@ -14,5 +14,5 @@ export default {
   cohereKey: process.env.COHERE_API_KEY || '',
   openaiKey: process.env.OPENAI_API_KEY || '',
   
-  embeddingProvider: (process.env.EMBEDDING_PROVIDER || 'mock') as 'cohere' | 'openai' | 'hf' | 'mock'
+  embeddingProvider: process.env.EMBEDDING_PROVIDER || 'openai',
 };

@@ -12,6 +12,7 @@ export async function initKnowledge(filePath = path.join(process.cwd(), 'knowled
   const chunks = chunkText(raw, 250);
   const embeddings = await Promise.all(chunks.map(c => embedText(c)));
   for (let i = 0; i < chunks.length; i++) {
+    console.log(`Chunk ${i} embedding length: ${embeddings[i].length}`);
     knowledgeIndex.push({ text: chunks[i], embedding: embeddings[i] });
   }
   console.log(`Loaded ${knowledgeIndex.length} chunks into memory.`);

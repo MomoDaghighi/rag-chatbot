@@ -1,10 +1,12 @@
 import IORedis from 'ioredis';
 import config from '../config';
 import { cosine } from '../utils/cosine';
+import logger from '../utils/logger';
 
 let redis: IORedis | null = null;
 let ready = false;
-const CACHE_PREFIX = 'cache:';
+const SIMILARITY_THRESHOLD = 0.85;
+const CACHE_TTL = 86400;
 
 function createRedis() {
   const url = config.redisUrl.replace('::1', '127.0.0.1').replace('localhost', '127.0.0.1');
@@ -16,16 +18,16 @@ function createRedis() {
 
   redis.on('error', (err) => {
     ready = false;
-    console.warn('[Redis] error:', err.message);
+    logger.warn('[Redis] error:', err.message);
   });
 
   redis.on('connect', () => {
     ready = true;
-    console.log('[Redis] connected');
+    logger.info('[Redis] connected');
   });
 
   redis.connect().catch(() => {
-    console.warn('[Redis] initial connect failed — cache disabled');
+    logger.warn('[Redis] initial connect failed — cache disabled');
   });
 }
 
@@ -33,45 +35,44 @@ createRedis();
 
 export { redis, ready };
 
-export async function setCache(key: string, value: any, ttl = 3600) {
+export async function setCache(
+  embedding: number[],
+  response: string,
+  userId: string,
+  sessionId: string
+) {
   if (!redis || !ready) return;
+
+  const key = `cache:${userId}:${sessionId}`;
   try {
-    await redis.set(CACHE_PREFIX + key, JSON.stringify(value), 'EX', ttl);
-  } catch (e) {
-    console.warn('[cache.set] error:', e);
+    await redis.setex(key, CACHE_TTL, JSON.stringify({ embedding, response }));
+    logger.debug('Response cached', { key });
+  } catch (e: any) {
+    logger.warn('[cache.set] error:', e.message);
   }
 }
 
 export async function findSimilarInCache(
   queryEmbedding: number[],
-  threshold = 0.90
-): Promise<{ response: string; cached: true } | null> {
+  userId: string,
+  sessionId: string
+): Promise<string | null> {
   if (!redis || !ready) return null;
 
+  const key = `cache:${userId}:${sessionId}`;
   try {
-    const keys = await redis.keys(CACHE_PREFIX + 'msg:*');
-    if (!keys.length) return null;
+    const cachedStr = await redis.get(key);
+    if (!cachedStr) return null;
 
-    
-    const recentKeys = keys.slice(-50);
-
-    for (const key of recentKeys) {
-      const cachedStr = await redis.get(key);
-      if (!cachedStr) continue;
-
-      const cached = JSON.parse(cachedStr);
-      if (!cached.embedding || !Array.isArray(cached.embedding)) continue;
-
-      const similarity = cosine(queryEmbedding, cached.embedding);
-      if (similarity >= threshold) {
-        console.log(`[Cache] Hit by similarity: ${similarity.toFixed(3)}`);
-        return { response: cached.response, cached: true };
-      }
+    const cached = JSON.parse(cachedStr);
+    const similarity = cosine(queryEmbedding, cached.embedding);
+    if (similarity >= SIMILARITY_THRESHOLD) {
+      logger.info('[Cache] Hit by similarity', { similarity: similarity.toFixed(3), key });
+      return cached.response;
     }
-  } catch (e) {
-    console.warn('[cache.similar] search failed:', e);
+  } catch (e: any) {
+    logger.warn('[cache.similar] error:', e.message);
   }
-
   return null;
 }
 
